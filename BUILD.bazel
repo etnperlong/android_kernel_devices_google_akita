@@ -141,6 +141,7 @@ kernel_build(
         # keep sorted
         "//{}:kernel_aarch64_sources".format(_GKI_KERNEL_DIR),
         "//private/google-modules/bms/misc:bms-misc.kconfig",
+        "//private/google-modules/display/common:common.kconfig",
         "//private/google-modules/power/reset:reset.kconfig",
         "//private/google-modules/soc/gs:build.config.slider.blktest",
         "//private/google-modules/soc/gs:build.config.slider.debug_api",
