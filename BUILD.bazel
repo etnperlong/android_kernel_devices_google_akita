@@ -194,6 +194,7 @@ kernel_module(
     name = "zuma_soc.akita",
     srcs = [
         "//private/google-modules/soc/gs:gs_soc_sources",
+        "//private/google-modules/trusty:headers",
     ],
     outs = [
         # keep sorted
