@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-load("//aosp-staging:modules.bzl", "COMMON_GKI_MODULES_LIST")
+load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("//aosp:modules.bzl", "COMMON_GKI_MODULES_LIST")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 load("//build/kernel/kleaf:constants.bzl", "aarch64_outs")
 load(
     "//build/kernel/kleaf:kernel.bzl",
+    "gki_artifacts",
     "kernel_abi",
-    "kernel_abi_dist",
     "kernel_build",
     "kernel_images",
-    "kernel_module",
     "kernel_module_group",
     "kernel_modules_install",
     "kernel_unstripped_modules_archive",
@@ -18,34 +19,30 @@ load(
 load(
     "//private/google-modules/soc/gs:device_build_configs.bzl",
     "device_build_configs",
+    "extracted_system_dlkm",
+    "lto_dependant_kernel_module",
 )
 
-# TODO: make this configurable to allow switching between aosp/ and
-# aosp-staging/
-_GKI_KERNEL_DIR = "aosp-staging"
-
-_GKI_BUILD_CONFIG_FRAGMENT = "//private/devices/google/akita:build.config.akita.gki.fragment"
+_GKI_AARCH64_MAKE_GOALS = [
+    "Image",
+    "Image.lz4",
+    "Image.gz",
+    "modules",
+]
 
 device_build_configs(
     name = "build.config.akita",
     base_build_config = ":build.config.akita",
     device_name = "akita",
-    gki_build_config_fragment = _GKI_BUILD_CONFIG_FRAGMENT,
-    gki_kernel_dir = _GKI_KERNEL_DIR,
-    staging_kernel = True,
 )
 
-# TODO(b/221278445): Use real GKI. Delete the akita_gki targets.
-# Note: akita_gki and akita_X all writes to akita_gki_defconfig,
-# which prevents them to be built without sandboxes (--config=local) in
-# parallel. This will be fixed by b/229309039.
 kernel_build(
     name = "akita_gki",
     srcs = glob([
         "akita*.fragment",
         "build.config.*",
     ]) + [
-        "//{}:kernel_aarch64_sources".format(_GKI_KERNEL_DIR),
+        "//aosp-staging:kernel_aarch64_sources",
         "//private/google-modules/soc/gs:build.config.slider.blktest",
         "//private/google-modules/soc/gs:build.config.slider.debug_api",
         "//private/google-modules/soc/gs:build.config.slider.debug_kmemleak",
@@ -56,6 +53,7 @@ kernel_build(
         "//private/google-modules/soc/gs:build.config.slider.khwasan",
     ],
     outs = aarch64_outs,
+    additional_kmi_symbol_lists = ["//aosp-staging:android/abi_gki_aarch64_pixel"],
     build_config = ":gki_build_config",
     collect_unstripped_modules = True,
     # For building system_dlkm (b/241855743)
@@ -65,8 +63,12 @@ kernel_build(
         "certs/signing_key.pem",
         "certs/signing_key.x509",
     ],
+    kmi_symbol_list = "//aosp-staging:android/abi_gki_aarch64",
+    kmi_symbol_list_strict_mode = False,
+    make_goals = _GKI_AARCH64_MAKE_GOALS,
     module_implicit_outs = COMMON_GKI_MODULES_LIST,
     strip_modules = True,
+    trim_nonlisted_kmi = True,
 )
 
 kernel_modules_install(
@@ -82,6 +84,41 @@ kernel_images(
     kernel_modules_install = "akita_gki_modules_install",
 )
 
+gki_artifacts(
+    name = "akita_gki_artifacts",
+    arch = "arm64",
+    boot_img_sizes = {
+        # Assume BUILD_GKI_BOOT_IMG_SIZE is the following
+        "": "67108864",
+        # Assume BUILD_GKI_BOOT_IMG_LZ4_SIZE is the following
+        "lz4": "53477376",
+        # Assume BUILD_GKI_BOOT_IMG_GZ_SIZE is the following
+        "gz": "47185920",
+    },
+    kernel_build = "akita_gki",
+)
+
+filegroup(
+    name = "gki_aarch64_boot_lz4",
+    srcs = select({
+        "//private/google-modules/soc/gs:gki_aosp": ["//aosp:kernel_aarch64_gki_artifacts"],
+        "//private/google-modules/soc/gs:gki_aosp_staging": [":akita_gki_artifacts"],
+    }),
+    output_group = "boot_lz4",
+)
+
+genrule(
+    name = "gki_aarch64_boot",
+    srcs = [":gki_aarch64_boot_lz4"],
+    outs = ["boot.img"],
+    cmd = "mv $< $@",
+)
+
+_PIXEL_MAKE_GOALS = [
+    "modules",
+    "dtbs",
+]
+
 _SOC_REVS = [
     "a0-foplp",
     "a0-ipop",
@@ -92,6 +129,23 @@ _SOC_REVS = [
 _AKITA_DTBOS = [
     # Sync with build.config.akita
     "google/zuma-akita-dev1.dtbo",
+    "google/zuma-akita-dev1-gnss.dtbo",
+    "google/zuma-akita-proto1-A0-broadcom-gnss.dtbo",
+    "google/zuma-akita-proto1-B1-broadcom-gnss.dtbo",
+    "google/zuma-akita-proto1-A0-samsung-gnss.dtbo",
+    "google/zuma-akita-proto1-B1-samsung-gnss.dtbo",
+    "google/zuma-akita-proto1_1-broadcom-gnss.dtbo",
+    "google/zuma-akita-proto1_1-samsung-gnss.dtbo",
+    "google/zuma-akita-proto1_1-broadcom-gnss-wingboard.dtbo",
+    "google/zuma-akita-proto1_1-samsung-gnss-wingboard.dtbo",
+    "google/zuma-akita-proto1_1-broadcom-gnss-sky.dtbo",
+    "google/zuma-akita-proto1_1-samsung-gnss-sky.dtbo",
+    "google/zuma-akita-evt1-broadcom-gnss.dtbo",
+    "google/zuma-akita-evt1-samsung-gnss.dtbo",
+    "google/zuma-akita-evt1_1.dtbo",
+    "google-dts-base/zuma-dpm-eng.dtbo",
+    "google-dts-base/zuma-dpm-user.dtbo",
+    "google-dts-base/zuma-dpm-userdebug.dtbo",
 ]
 
 kernel_module_group(
@@ -110,12 +164,13 @@ kernel_module_group(
         "//private/google-modules/bluetooth/broadcom:bluetooth.broadcom",
         "//private/google-modules/bms",
         "//private/google-modules/bms/misc:bms-misc",
-        "//private/google-modules/display:display.samsung",
+        "//private/google-modules/display/samsung:display.samsung",
         "//private/google-modules/edgetpu/rio/drivers/edgetpu:edgetpu.rio",
         "//private/google-modules/gps/broadcom/bcm47765",
         "//private/google-modules/gpu/mali_kbase",
         "//private/google-modules/gpu/mali_pixel",
         "//private/google-modules/gxp/zuma:gxp",
+        "//private/google-modules/hdcp/samsung:hdcp.samsung",
         "//private/google-modules/lwis",
         "//private/google-modules/nfc",
         "//private/google-modules/power/reset",
@@ -123,8 +178,7 @@ kernel_module_group(
         "//private/google-modules/touch/fts/ftm5",
         "//private/google-modules/touch/goodix",
         "//private/google-modules/touch/sec",
-        # TODO: need to conditionally include this based on if the project is
-        # sync'd
+        "//private/google-modules/trusty",
         "//private/google-modules/uwb:uwb.qm35",
         "//private/google-modules/video/gchips:video.gchips",
         "//private/google-modules/wlan/bcm4383:bcmdhd4383",
@@ -139,7 +193,6 @@ kernel_build(
         "dts/**",
     ]) + [
         # keep sorted
-        "//{}:kernel_aarch64_sources".format(_GKI_KERNEL_DIR),
         "//private/google-modules/bms/misc:bms-misc.kconfig",
         "//private/google-modules/power/reset:reset.kconfig",
         "//private/google-modules/soc/gs:build.config.slider.blktest",
@@ -155,29 +208,41 @@ kernel_build(
         "//private/google-modules/touch/common:touch.common.kconfig",
         "//private/google-modules/touch/fts/ftm5:ftm5.kconfig",
         "//private/google-modules/touch/sec:sec.kconfig",
-    ],
+        "//private/google-modules/trusty:trusty.kconfig",
+        "//private/google-modules/wlan/wlan_ptracker:wlan_ptracker.kconfig",
+    ] + select({
+        "//private/google-modules/soc/gs:gki_aosp": ["//aosp:kernel_aarch64_sources"],
+        "//private/google-modules/soc/gs:gki_aosp_staging": ["//aosp-staging:kernel_aarch64_sources"],
+    }),
     outs = [
         "google-dts-base/zuma-{}.dtb".format(soc_rev)
         for soc_rev in _SOC_REVS
-    ],
-    # TODO(b/221278445): Use real GKI
-    # base_kernel = "//{}:kernel_aarch64".format(_GKI_KERNEL_DIR),
-    base_kernel = ":akita_gki",
+    ] + _AKITA_DTBOS,
+    base_kernel = select({
+        "//private/google-modules/soc/gs:gki_aosp": "//aosp:kernel_aarch64_download_or_build",
+        "//private/google-modules/soc/gs:gki_aosp_staging": ":akita_gki",
+    }),
     build_config = ":device_build_config",
     collect_unstripped_modules = True,
     dtstree = "//private/devices/google/akita/dts:akita.dt",
-    implicit_outs = _AKITA_DTBOS,
     kconfig_ext = "//private/google-modules/soc/gs:Kconfig.ext",
-    kmi_symbol_list = "//{}:android/abi_gki_aarch64_pixel".format(_GKI_KERNEL_DIR),
+    kmi_symbol_list = select({
+        "//private/google-modules/soc/gs:gki_aosp": "//aosp:android/abi_gki_aarch64_pixel",
+        "//private/google-modules/soc/gs:gki_aosp_staging": "//aosp-staging:android/abi_gki_aarch64_pixel",
+    }),
+    make_goals = _PIXEL_MAKE_GOALS,
     module_outs = [
         # keep sorted
         "drivers/i2c/i2c-dev.ko",
         "drivers/misc/eeprom/at24.ko",
         "drivers/misc/open-dice.ko",
+        "drivers/perf/arm-cmn.ko",
         "drivers/perf/arm_dsu_pmu.ko",
         "drivers/scsi/sg.ko",
         "drivers/spi/spidev.ko",
         "drivers/watchdog/softdog.ko",
+        "net/mac80211/mac80211.ko",
+        "net/wireless/cfg80211.ko",
     ],
     strip_modules = True,
 )
@@ -190,7 +255,7 @@ kernel_abi(
     module_grouping = False,
 )
 
-kernel_module(
+lto_dependant_kernel_module(
     name = "zuma_soc.akita",
     srcs = [
         "//private/google-modules/soc/gs:gs_soc_sources",
@@ -245,12 +310,14 @@ kernel_module(
         "drivers/pinctrl/pinctrl-slg51002.ko",
         "drivers/power/reset/debug-reboot.ko",
         "drivers/regulator/pmic_class.ko",
+        "drivers/regulator/rt6160-regulator.ko",
         "drivers/regulator/s2mpg14-powermeter.ko",
         "drivers/regulator/s2mpg14-regulator.ko",
         "drivers/regulator/s2mpg15-powermeter.ko",
         "drivers/regulator/s2mpg15-regulator.ko",
         "drivers/regulator/slg51002-regulator.ko",
         "drivers/rtc/rtc-s2mpg14.ko",
+        "drivers/soc/google/acpm/acpm_flexpmu_dbg.ko",
         "drivers/soc/google/acpm/acpm_mbox_test.ko",
         "drivers/soc/google/acpm/gs_acpm.ko",
         "drivers/soc/google/acpm/power_stats.ko",
@@ -261,17 +328,20 @@ kernel_module(
         "drivers/soc/google/cpif/cpif_page.ko",
         "drivers/soc/google/cpif/shm_ipc.ko",
         "drivers/soc/google/dbgcore-dump.ko",
+        "drivers/soc/google/debug/bookerci.ko",
         "drivers/soc/google/debug/debug-snapshot-debug-kinfo.ko",
         "drivers/soc/google/debug/dss.ko",
         "drivers/soc/google/debug/ehld.ko",
         "drivers/soc/google/debug/exynos-adv-tracer.ko",
         "drivers/soc/google/debug/exynos-adv-tracer-s2d.ko",
         "drivers/soc/google/debug/exynos-coresight.ko",
+        "drivers/soc/google/debug/exynos-coresight-etm.ko",
         "drivers/soc/google/debug/exynos-debug-test.ko",
         "drivers/soc/google/debug/exynos-ecc-handler.ko",
         "drivers/soc/google/debug/itmon.ko",
         "drivers/soc/google/debug/pixel-boot-metrics.ko",
         "drivers/soc/google/debug/pixel-debug-test.ko",
+        "drivers/soc/google/debug/pixel-suspend-diag.ko",
         "drivers/soc/google/debug/sjtag-driver.ko",
         "drivers/soc/google/ect_parser.ko",
         "drivers/soc/google/eh/eh.ko",
@@ -282,20 +352,30 @@ kernel_module(
         "drivers/soc/google/exynos-pd.ko",
         "drivers/soc/google/exynos-pd-dbg.ko",
         "drivers/soc/google/exynos-pd_el3.ko",
+        "drivers/soc/google/exynos-pm.ko",
         "drivers/soc/google/exynos-pmu-if.ko",
         "drivers/soc/google/exynos-seclog.ko",
         "drivers/soc/google/exynos_pm_qos.ko",
+        "drivers/soc/google/gcma/gcma.ko",
+        "drivers/soc/google/gnssif_spi/gnss_spi.ko",
+        "drivers/soc/google/gnssif_spi/gnssif.ko",
         "drivers/soc/google/gs-chipid.ko",
         "drivers/soc/google/gsa/gsa.ko",
         "drivers/soc/google/gsa/gsa_gsc.ko",
         "drivers/soc/google/hardlockup-debug.ko",
         "drivers/soc/google/hardlockup-watchdog.ko",
-        "drivers/soc/google/pkvm-s2mpu/pkvm-s2mpu.ko",
+        "drivers/soc/google/perf_trace_counters.ko",
+        "drivers/soc/google/pixel_stat/mm/pixel_stat_mm.ko",
+        "drivers/soc/google/pixel_stat/pixel_stat_sysfs.ko",
+        "drivers/soc/google/pkvm-s2mpu/pkvm-s2mpu-v9/pkvm-s2mpu-v9.ko",
         "drivers/soc/google/pt/slc_acpm.ko",
         "drivers/soc/google/pt/slc_dummy.ko",
         "drivers/soc/google/pt/slc_pmon.ko",
         "drivers/soc/google/pt/slc_pt.ko",
         "drivers/soc/google/vh/kernel/cgroup/vh_cgroup.ko",
+        "drivers/soc/google/vh/kernel/fs/vh_fs.ko",
+        "drivers/soc/google/vh/kernel/metrics/pixel_metrics.ko",
+        "drivers/soc/google/vh/kernel/mm/vh_mm.ko",
         "drivers/soc/google/vh/kernel/pixel_em/pixel_em.ko",
         "drivers/soc/google/vh/kernel/sched/sched_tp.ko",
         "drivers/soc/google/vh/kernel/sched/vh_preemptirq_long.ko",
@@ -308,15 +388,8 @@ kernel_module(
         "drivers/thermal/google/s2mpg15_spmic_thermal.ko",
         "drivers/thermal/samsung/gpu_cooling.ko",
         "drivers/thermal/samsung/gs_thermal.ko",
-        "drivers/trusty/trusty-core.ko",
-        "drivers/trusty/trusty-ipc.ko",
-        "drivers/trusty/trusty-irq.ko",
-        "drivers/trusty/trusty-log.ko",
-        "drivers/trusty/trusty-test.ko",
-        "drivers/trusty/trusty-virtio.ko",
         "drivers/tty/serial/exynos_tty.ko",
         "drivers/ufs/ufs-exynos-gs.ko",
-        "drivers/ufs/ufs-pixel-fips140.ko",
         "drivers/usb/dwc3/dwc3-exynos-usb.ko",
         "drivers/usb/gadget/function/usb_f_dm.ko",
         "drivers/usb/gadget/function/usb_f_dm1.ko",
@@ -331,6 +404,9 @@ kernel_module(
         "drivers/watchdog/s3c2410_wdt.ko",
     ],
     kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    lto_outs = [
+        "drivers/ufs/ufs-pixel-fips140.ko",
+    ],
     makefile = ["//private/google-modules/soc/gs:Makefile"],
     visibility = [
         # keep sorted
@@ -339,6 +415,7 @@ kernel_module(
     ],
     deps = [
         "//private/google-modules/bms/misc:bms-misc",
+        "//private/google-modules/trusty",
     ],
 )
 
@@ -379,27 +456,54 @@ genrule(
     tools = ["//build/kernel:hermetic-tools/cat"],
 )
 
+# Don't load the zram GKI module
+_GKI_MODULES = [m for m in COMMON_GKI_MODULES_LIST if not m.endswith("zram.ko")]
+
+write_file(
+    name = "system_dlkm_modules_list",
+    out = "system_dlkm_modules_list.akita",
+    content = _GKI_MODULES,
+)
+
 kernel_images(
     name = "zuma_akita_images",
-    build_boot = True,
+    base_kernel_images = select({
+        "//private/google-modules/soc/gs:gki_aosp": "//aosp:kernel_aarch64_images_download_or_build",
+        "//private/google-modules/soc/gs:gki_aosp_staging": ":akita_gki_images",
+    }),
+    boot_image_outs = ["dtb.img"],
+    build_boot = False,
     build_dtbo = True,
     build_initramfs = True,
+    build_system_dlkm = True,
     build_vendor_dlkm = True,
     build_vendor_kernel_boot = True,
+    dedup_dlkm_modules = True,
     dtbo_srcs = [":zuma_akita/" + file for file in _AKITA_DTBOS],
     kernel_build = ":zuma_akita",
     kernel_modules_install = ":zuma_akita_modules_install",
     # Keep the following in sync with build.config.akita:
     modules_list = ":vendor_kernel_boot_modules.akita-cat",
+    system_dlkm_modules_list = ":system_dlkm_modules_list",
+    system_dlkm_props = "//private/google-modules/soc/gs:system_dlkm.props.zuma",
+    vendor_dlkm_etc_files = ["//private/devices/google/akita:insmod_cfgs"],
     vendor_dlkm_modules_blocklist = "//private/google-modules/soc/gs:vendor_dlkm.blocklist.zuma",
     # No MODULES_BLOCKLIST
     vendor_dlkm_modules_list = "//private/google-modules/soc/gs:vendor_dlkm_modules.zuma",
     vendor_dlkm_props = "//private/google-modules/soc/gs:vendor_dlkm.props.zuma",
     deps = [
-        # Keep the following in sync with vendor_dlkm.props.zuma:
+        # Keep the following in sync with (vendor|system)_dlkm.props.zuma:
         # selinux_fc
         "//prebuilts/boot-artifacts/selinux:file_contexts",
+        "//prebuilts/boot-artifacts/selinux:system_file_contexts",
     ],
+)
+
+filegroup(
+    name = "insmod_cfgs",
+    srcs = glob([
+        "insmod_cfg/*.cfg",
+    ]),
 )
 
 # TODO: support running ufdt_apply_overlay in a loop on each DTBO
@@ -425,54 +529,45 @@ kernel_images(
 #    ),
 #)
 
-_GKI_MODULES = [
-    # keep sorted
-    ":akita_gki/lib/crypto/libarc4.ko",
-    ":akita_gki/mm/zsmalloc.ko",
-    ":akita_gki/net/mac80211/mac80211.ko",
-    ":akita_gki/net/rfkill/rfkill.ko",
-    ":akita_gki/net/wireless/cfg80211.ko",
-]
-
 _zuma_akita_dist_targets = [
-    # TODO(b/221278445) use real GKI; replace with //common:kernel_aarch64_additional_artifacts.
-    # This will include abi.xml, abi_symbollist and abi_symbollist.report.
-    ":akita_gki",
-    "akita_gki_headers",
-    "akita_gki_kmi_symbol_list",
-    "akita_gki_images",
-    "//build/kernel:gki_certification_tools",
-
     # Device-specific artifacts
     ":zuma_akita",
     ":zuma_akita_modules_install",
-    # At the time of writing (2022-02-04), this intentionally diverges from
-    # the behavior of build.sh-style mixed builds by also incorporating
-    # UAPI headers of external modules, while build.sh-style mixed builds
-    # always uses kernel-uapi-headers.tar.gz from GKI_DIST_DIR.
-    # To use (zuma-)GKI's kernel-uapi-headers.tar.gz in DIST_DIR, use
-    #     :zuma_gki_uapi_headers
-    # instead.
     ":zuma_akita_merged_uapi_headers",
     ":zuma_akita_images",
+    ":gki_aarch64_boot",
     # TODO: support running ufdt_apply_overlay in a loop on each DTBO
     #":zuma_akita_ufdt_overlay",
     ":zuma_akita_unstripped_modules_archive",
-] + _GKI_MODULES
+    ":insmod_cfgs",
+    ":zuma_akita_extracted_system_dlkm",
+] + select({
+    "//private/google-modules/soc/gs:gki_aosp": [
+        "//aosp:android/abi_gki_aarch64_pixel",
+        "//aosp:kernel_aarch64_download_or_build",
+        "//aosp:kernel_aarch64_headers_download_or_build",
+    ],
+    "//private/google-modules/soc/gs:gki_aosp_staging": [
+        "akita_gki",
+        "akita_gki_headers",
+        "//aosp-staging:android/abi_gki_aarch64_pixel",
+        "//build/kernel:gki_certification_tools",
+    ],
+})
+
+extracted_system_dlkm(
+    name = "zuma_akita_extracted_system_dlkm",
+    gki_modules = [paths.basename(m) for m in _GKI_MODULES],
+    images = select({
+        "//private/google-modules/soc/gs:gki_aosp": "//aosp:kernel_aarch64_images_download_or_build",
+        "//private/google-modules/soc/gs:gki_aosp_staging": ":akita_gki_images",
+    }),
+)
 
 copy_to_dist_dir(
     name = "zuma_akita_dist",
     data = _zuma_akita_dist_targets,
     dist_dir = "out/akita/dist",
     flat = True,
-    log = "info",
-)
-
-kernel_abi_dist(
-    name = "zuma_akita_abi_dist",
-    data = _zuma_akita_dist_targets,
-    dist_dir = "out/akita/dist",
-    flat = True,
-    kernel_abi = ":zuma_akita_abi",
     log = "info",
 )

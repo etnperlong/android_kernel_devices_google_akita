@@ -100,13 +100,6 @@
 		samsung,pin-drv = <ZUMA_PIN_DRV_X1>;
 	};
 
-	/* correct for aoc-vsync-pins */
-	aoc_vsync_pins: aoc-vsync-pins {
-		samsung,pins = "gpp3-1";
-		samsung,pin-function = <EXYNOS_PIN_FUNC_INPUT>;
-		samsung,pin-pud = <EXYNOS_PIN_PULL_DOWN>;
-	};
-
 	sensor_mclk1_out: sensor-mclk1-out {
 		samsung,pin-drv = <ZUMA_PIN_DRV_X2>;
 	};
@@ -218,7 +211,6 @@
 				/* Power supplies */
 				s2mpg15_ldo12-supply = <&s_ldo12_reg>;
 				ldo1-supply = <&slg51002_ldo1>;
-				ldo8-supply = <&slg51002_ldo8>;
 				ldo4-supply = <&slg51002_ldo4>;
 				ldo5-supply = <&slg51002_ldo5>;
 				ldo3-supply = <&slg51002_ldo3>;
@@ -240,66 +232,60 @@
 
 				/* Power up sequence */
 				power-up-seqs =
-					"enable",
 					"s2mpg15_ldo12",
 					"ldo5",
 					"ldo4",
 					"ldo1",
 					"ldo3",
-					"ldo8",
+					"enable",
 					"reset",
 					"mclk_on";
 				power-up-seq-types =
+					"regulator",
+					"regulator",
+					"regulator",
+					"regulator",
+					"regulator",
 					"gpio",
-					"regulator",
-					"regulator",
-					"regulator",
-					"regulator",
-					"regulator",
-					"regulator",
 					"gpio",
 					"pinctrl";
 				power-up-seq-delays-us =
-					<1000
-					 1000
-					 1000
+					<0
+					 0
+					 0
+					 0
 					 0
 					 1000
-					 1000
-					 1000
-					 1000
-					 9000>;
+					 0
+					 2000>;
 
 				/* Power down sequence */
 				power-down-seqs =
 					"mclk_off",
 					"reset",
-					"ldo8",
+					"enable",
 					"ldo3",
 					"ldo1",
 					"ldo4",
 					"ldo5",
-					"s2mpg15_ldo12",
-					"enable";
+					"s2mpg15_ldo12";
 				power-down-seq-types =
 					"pinctrl",
+					"gpio",
 					"gpio",
 					"regulator",
 					"regulator",
 					"regulator",
 					"regulator",
-					"regulator",
-					"regulator",
-					"gpio";
+					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000
-					 1000
-					 1000
-					 1000
-					 1000
-					 1000
+					<0
+					 0
+					 0
+					 0
+					 0
+					 0
+					 0
 					 0>;
 
 				/* Thread priority */
@@ -358,11 +344,11 @@
 					"gpio",
 					"pinctrl";
 				power-up-seq-delays-us =
-					<1000
+					<0
+					 0
 					 1000
-					 1000
-					 1000
-					 8000>;
+					 0
+					 0>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -378,11 +364,11 @@
 					"regulator",
 					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0
+					 0
+					 0>;
 
 				/* Thread priority */
 				transaction-thread-priority = <99>;
@@ -440,11 +426,11 @@
 					"gpio",
 					"pinctrl";
 				power-up-seq-delays-us =
-					<1000
+					<0
+					 0
 					 1000
-					 1000
-					 1000
-					 10000>;
+					 0
+					 1000>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -460,10 +446,10 @@
 					"regulator",
 					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000
-					 1000
+					<0
+					 0
+					 0
+					 0
 					 1000>;
 
 				/* Thread priority */
@@ -495,9 +481,9 @@
 					"regulator",
 					"regulator";
 				power-up-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 				/* Power down sequence */
 				power-down-seqs =
 					"ldo4",
@@ -508,9 +494,9 @@
 					"regulator",
 					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 			};
 
 			/* EEPROM SMAUG for LESHEN */
@@ -537,7 +523,7 @@
 				power-up-seq-types =
 					"regulator";
 				power-up-seq-delays-us =
-					<1000>;
+					<0>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -545,7 +531,7 @@
 				power-down-seq-types =
 					"regulator";
 				power-down-seq-delays-us =
-					<1000>;
+					<0>;
 			};
 
 			/* EEPROM SMAUG for LESHEN-UW */
@@ -572,7 +558,7 @@
 				power-up-seq-types =
 					"regulator";
 				power-up-seq-delays-us =
-					<1000>;
+					<0>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -613,9 +599,9 @@
 					"regulator",
 					"regulator";
 				power-up-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -627,9 +613,9 @@
 					"regulator",
 					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 
 				/* Thread priority */
 				periodic-io-thread-priority = <99>;
@@ -665,9 +651,9 @@
 					"regulator",
 					"regulator";
 				power-up-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 
 				/* Power down sequence */
 				power-down-seqs =
@@ -679,9 +665,9 @@
 					"regulator",
 					"regulator";
 				power-down-seq-delays-us =
-					<1000
-					 1000
-					 1000>;
+					<0
+					 0
+					 0>;
 
 				/* Thread priority */
 				periodic-io-thread-priority = <99>;

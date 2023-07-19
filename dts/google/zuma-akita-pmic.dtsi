@@ -52,13 +52,9 @@
 };
 
 &m_ext4_rail {
-	schematic-name = "VSYS_PWR_VBATT";
+	schematic-name = "VSYS_PWR_CAM";
 	shunt-res-uohms = <5000>;
-	subsys-name = "BATT";
-};
-
-&m_ext5_rail {
-	shunt-res-uohms = <10000>;
+	subsys-name = "Camera";
 };
 
 &s_ext4_rail {
