@@ -1,6 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
+if [ "${BUILD_AOSP_KERNEL}" != "1" ]; then
+  BUILD_STAGING_KERNEL="${BUILD_STAGING_KERNEL:-1}"
+fi
+
 function exit_if_error {
   if [ $1 -ne 0 ]; then
     echo "ERROR: $2: retval=$1" >&2
@@ -33,4 +37,10 @@ else
   echo -e "   3) IF \"build --config=download_gki\"                   ----> core-kernel based on GKI prebuilts\n"
 fi
 
-exec tools/bazel run ${parameters} --config=stamp --config=akita --config=fast //private/devices/google/akita:zuma_akita_dist "$@"
+exec tools/bazel run \
+    ${parameters} \
+    --config=stamp \
+    --config=akita \
+    --config=fast \
+    --config=pixel_debug_common \
+    //private/devices/google/akita:zuma_akita_dist "$@"
