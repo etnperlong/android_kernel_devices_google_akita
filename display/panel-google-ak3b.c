@@ -9,6 +9,8 @@
  * published by the Free Software Foundation.
  */
 
+#include <drm/display/drm_dsc_helper.h>
+#include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <video/mipi_display.h>
@@ -902,13 +904,31 @@ static void ak3b_lhbm_brightness_init(struct exynos_panel *ctx)
 		ctl->brt_overdrive, sizeof(ctl->brt_overdrive), false);
 }
 
+static void ak3b_debugfs_init(struct drm_panel *panel, struct dentry *root)
+{
+	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
+	struct dentry *panel_root, *csroot;
+
+	if (!ctx)
+		return;
+
+	panel_root = debugfs_lookup("panel", root);
+	if (!panel_root)
+		return;
+
+	csroot = debugfs_lookup("cmdsets", panel_root);
+	if (!csroot) {
+		goto panel_out;
+	}
+
+	exynos_panel_debugfs_create_cmdset(ctx, csroot, &ak3b_init_cmd_set, "init");
+	dput(csroot);
+panel_out:
+	dput(panel_root);
+}
+
 static void ak3b_panel_init(struct exynos_panel *ctx)
 {
-	struct dentry *csroot = ctx->debugfs_cmdset_entry;
-
-	exynos_panel_debugfs_create_cmdset(ctx, csroot,
-					   &ak3b_init_cmd_set, "init");
-
 	/* LHBM overdrive init */
 	ak3b_lhbm_brightness_init(ctx);
 	exynos_panel_send_cmd_set(ctx, &ak3b_lhbm_location_cmd_set);
@@ -1049,6 +1069,7 @@ static const struct drm_panel_funcs ak3b_drm_funcs = {
 	.prepare = exynos_panel_prepare,
 	.enable = ak3b_enable,
 	.get_modes = exynos_panel_get_modes,
+	.debugfs_init = ak3b_debugfs_init,
 };
 
 static const struct exynos_panel_funcs ak3b_exynos_funcs = {
