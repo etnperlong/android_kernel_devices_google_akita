@@ -15,6 +15,7 @@
 #include <linux/of_platform.h>
 #include <video/mipi_display.h>
 
+#include "include/trace/dpu_trace.h"
 #include "panel/panel-samsung-drv.h"
 
 static const struct drm_dsc_config pps_config = {
@@ -94,13 +95,20 @@ static const u8 freq_update[] = { 0xF7, 0x0F };
 #define FREQUENCY_COUNT 3
 #define LHBM_BRIGHTNESS_INDEX_SIZE 4
 
-static const u8 lhbm_brightness_index[FREQUENCY_COUNT][LHBM_BRIGHTNESS_INDEX_SIZE] = {
+static const u8 lhbm_brightness_write_index[FREQUENCY_COUNT][LHBM_BRIGHTNESS_INDEX_SIZE] = {
 	{ 0xB0, 0x03, 0xD7, 0x66 }, /* HS120 */
 	{ 0xB0, 0x03, 0xDC, 0x66 }, /* HS60 */
 	{ 0xB0, 0x03, 0xE6, 0x66 }  /* NS60 */
 };
 
-static const u8 lhbm_brightness_reg = 0x66;
+static const u8 lhbm_brightness_read_index[FREQUENCY_COUNT][LHBM_BRIGHTNESS_INDEX_SIZE] = {
+	{ 0xB0, 0x00, 0x22, 0xD8 }, /* HS120 */
+	{ 0xB0, 0x00, 0x18, 0xD8 }, /* HS60 */
+	{ 0xB0, 0x00, 0x1D, 0xD8 }  /* NS60 */
+};
+
+static const u8 lhbm_brightness_write_reg = 0x66;
+static const u8 lhbm_brightness_read_reg = 0xD8;
 
 static const struct exynos_dsi_cmd ak3b_off_cmds[] = {
 	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_DISPLAY_OFF),
@@ -143,12 +151,6 @@ static const struct exynos_dsi_cmd ak3b_init_cmds[] = {
 
 	EXYNOS_DSI_CMD_SEQ_DELAY_REV(PANEL_REV_GE(PANEL_REV_EVT1), 10, MIPI_DCS_EXIT_SLEEP_MODE),
 
-	/* Frequencey settings */
-	EXYNOS_DSI_CMD0_REV(test_key_on_f0, PANEL_REV_PROTO1_1),
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_PROTO1_1, 0x60, 0x08, 0x00), /* 60 hz HS */
-	EXYNOS_DSI_CMD0_REV(freq_update, PANEL_REV_PROTO1_1),
-	EXYNOS_DSI_CMD0_REV(test_key_off_f0, PANEL_REV_PROTO1_1),
-
 	/* GPO_DC Setting(HS 60Hz) */
 	EXYNOS_DSI_CMD0_REV(test_key_on_f0, PANEL_REV_GE(PANEL_REV_EVT1)),
 	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_GE(PANEL_REV_EVT1),
@@ -157,6 +159,12 @@ static const struct exynos_dsi_cmd ak3b_init_cmds[] = {
 	EXYNOS_DSI_CMD0_REV(freq_update, PANEL_REV_GE(PANEL_REV_EVT1)),
 	/* Delay 110 ms after sending GPO_DC settings */
 	EXYNOS_DSI_CMD_REV(test_key_off_f0, 110, PANEL_REV_GE(PANEL_REV_EVT1)),
+
+	/* Frequencey settings */
+	EXYNOS_DSI_CMD0_REV(test_key_on_f0, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
+	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_GE(PANEL_REV_PROTO1_1), 0x60, 0x08, 0x00), /* 60 hz HS */
+	EXYNOS_DSI_CMD0_REV(freq_update, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
+	EXYNOS_DSI_CMD0_REV(test_key_off_f0, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
 
 	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_TEAR_ON, 0x00),
 	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_COLUMN_ADDRESS, 0x00, 0x00, 0x04, 0x37),
@@ -300,7 +308,7 @@ static void read_lhbm_gamma(struct exynos_panel *ctx, u8 *cmd, enum frequency fr
 
 	/* fill in gamma write command 0x66 in offset 0 */
 	cmd[0] = 0x66;
-	dev_dbg(ctx->dev, "%s_gamma: %*ph\n", frequency_str[freq],
+	dev_info(ctx->dev, "%s_gamma: %*ph\n", frequency_str[freq],
 		LHBM_GAMMA_CMD_SIZE - 1, cmd + 1);
 }
 
@@ -461,6 +469,7 @@ static void ak3b_change_frequency(struct exynos_panel *ctx,
 				    const unsigned int vrefresh)
 {
 	const u8 hs60_setting[3] = {0x60, 0x08, 0x00};
+	const u8 ns60_setting[3] = {0x60, 0x18, 0x00};
 	const u8 hs120_setting[3] = {0x60, 0x00, 0x00};
 
 	if (!ctx || (vrefresh != 60 && vrefresh != 120))
@@ -471,7 +480,11 @@ static void ak3b_change_frequency(struct exynos_panel *ctx,
 		EXYNOS_DCS_BUF_ADD_SET(ctx, hs120_setting);
 		EXYNOS_DCS_BUF_ADD(ctx, 0xB9, 0x31);
 	} else {
-		EXYNOS_DCS_BUF_ADD_SET(ctx, hs60_setting);
+		if (ctx->op_hz == 120)
+			EXYNOS_DCS_BUF_ADD_SET(ctx, hs60_setting);
+		else
+			EXYNOS_DCS_BUF_ADD_SET(ctx, ns60_setting);
+
 		EXYNOS_DCS_BUF_ADD(ctx, 0xB9, 0x30);
 	}
 	EXYNOS_DCS_BUF_ADD_SET(ctx, freq_update);
@@ -511,12 +524,34 @@ static int ak3b_set_op_hz(struct exynos_panel *ctx, unsigned int hz)
 		return 0;
 	}
 
+	DPU_ATRACE_BEGIN(__func__);
+
 	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
 	buf_add_frequency_select_cmd(ctx);
 	EXYNOS_DCS_BUF_ADD_SET(ctx, freq_update);
 	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
 
 	dev_info(ctx->dev, "set op_hz at %u\n", hz);
+
+	if (hz == 120) {
+		/*
+		* We may transfer the frame for the first TE after switching from
+		* NS to HS mode. The DDIC read speed will change from 60Hz to 120Hz,
+		* but the DPU write speed will remain the same. In this case,
+		* underruns would happen. Waiting for an extra vblank here so that
+		* the frame can be postponed to the next TE to avoid the noises.
+		*/
+		dev_dbg(ctx->dev, "wait one vblank after NS to HS\n");
+
+		DPU_ATRACE_BEGIN("ak3b_wait_one_vblank");
+		if (unlikely(exynos_panel_wait_for_vblank(ctx))) {
+			usleep_range(8350, 8500);
+		}
+		DPU_ATRACE_END("ak3b_wait_one_vblank");
+	}
+
+	DPU_ATRACE_END(__func__);
+
 	return 0;
 }
 
@@ -763,7 +798,7 @@ static void ak3b_set_local_hbm_brightness(struct exynos_panel *ctx, bool is_firs
 			else
 				group = LHBM_OVERDRIVE_GRP_MAX;
 		}
-		dev_dbg(ctx->dev, "check LHBM overdrive condition | gray=%u dbv=%u luma=%u\n",
+		dev_info(ctx->dev, "check LHBM overdrive condition | gray=%u dbv=%u luma=%u\n",
 			gray, dbv, luma);
 	}
 
@@ -774,14 +809,14 @@ static void ak3b_set_local_hbm_brightness(struct exynos_panel *ctx, bool is_firs
 		brt = ctl->brt_normal[freq];
 		ctl->overdrived = false;
 	}
-	cmd[0] = lhbm_brightness_reg;
+	cmd[0] = lhbm_brightness_write_reg;
 	for (i = 0; i < LHBM_BRT_LEN; i++)
 		cmd[i+1] = brt[i];
-	dev_dbg(ctx->dev, "set %s brightness: [%d] %*ph\n",
+	dev_info(ctx->dev, "set %s brightness: [%d] %*ph\n",
 		ctl->overdrived ? "overdrive" : "normal",
 		ctl->overdrived ? group : -1, LHBM_BRT_LEN, brt);
 	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
-	EXYNOS_DCS_BUF_ADD_SET(ctx, lhbm_brightness_index[freq]);
+	EXYNOS_DCS_BUF_ADD_SET(ctx, lhbm_brightness_write_index[freq]);
 	EXYNOS_DCS_BUF_ADD_SET(ctx, cmd);
 	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
 }
@@ -879,8 +914,8 @@ static void ak3b_lhbm_brightness_init(struct exynos_panel *ctx)
 
 	for (freq = 0; freq < FREQUENCY_COUNT; freq++) {
 		EXYNOS_DCS_WRITE_TABLE(ctx, test_key_on_f0);
-		EXYNOS_DCS_WRITE_TABLE(ctx, lhbm_brightness_index[freq]);
-		ret = mipi_dsi_dcs_read(dsi, lhbm_brightness_reg,
+		EXYNOS_DCS_WRITE_TABLE(ctx, lhbm_brightness_read_index[freq]);
+		ret = mipi_dsi_dcs_read(dsi, lhbm_brightness_read_reg,
 			ctl->brt_normal[freq], LHBM_BRT_LEN);
 		EXYNOS_DCS_WRITE_TABLE(ctx, test_key_off_f0);
 
