@@ -101,17 +101,25 @@ gki_artifacts(
 filegroup(
     name = "gki_aarch64_boot_lz4",
     srcs = select({
-        "//private/google-modules/soc/gs:gki_aosp": ["//aosp:kernel_aarch64_gki_artifacts"],
+        "//private/google-modules/soc/gs:gki_aosp": ["//aosp:kernel_aarch64_gki_artifacts_download_or_build"],
         "//private/google-modules/soc/gs:gki_aosp_staging": [":akita_gki_artifacts"],
     }),
-    output_group = "boot_lz4",
 )
 
+# TODO(b/285605996): Use hermetic_genrule
 genrule(
     name = "gki_aarch64_boot",
     srcs = [":gki_aarch64_boot_lz4"],
     outs = ["boot.img"],
-    cmd = "mv $< $@",
+    cmd = """
+        for f in $(locations :gki_aarch64_boot_lz4); do
+            if [[ "$${f##*/}" == "boot-lz4.img" ]]; then
+                $(location //build/kernel:hermetic-tools/mv) $$f $(location boot.img)
+                break
+            fi
+        done
+    """,
+    tools = ["//build/kernel:hermetic-tools/mv"],
 )
 
 _PIXEL_MAKE_GOALS = [
@@ -143,6 +151,8 @@ _AKITA_DTBOS = [
     "google/zuma-akita-evt1-broadcom-gnss.dtbo",
     "google/zuma-akita-evt1-samsung-gnss.dtbo",
     "google/zuma-akita-evt1_1.dtbo",
+    "google/zuma-akita-dvt1.dtbo",
+    "google/zuma-akita-dvt1-2nd-fab.dtbo",
     "google-dts-base/zuma-dpm-eng.dtbo",
     "google-dts-base/zuma-dpm-user.dtbo",
     "google-dts-base/zuma-dpm-userdebug.dtbo",
@@ -439,6 +449,7 @@ kernel_unstripped_modules_archive(
     kernel_modules = [":akita_ext_modules"],
 )
 
+# TODO(b/285605996): Use hermetic_genrule
 genrule(
     name = "vendor_kernel_boot_modules.akita-cat",
     srcs = [
@@ -449,7 +460,6 @@ genrule(
     outs = [
         "vendor_kernel_boot_modules.concat",
     ],
-    # TODO(b/259274243): switch to using the hermetic-tools cat binary
     cmd = """
         cat $(location vendor_kernel_boot_modules.akita) \\
             $(location //private/google-modules/soc/gs:vendor_kernel_boot_modules.zuma) \\
