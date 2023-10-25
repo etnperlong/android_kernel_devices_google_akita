@@ -9,12 +9,12 @@
  * published by the Free Software Foundation.
  */
 
-#include <drm/drm_vblank.h>
+#include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <video/mipi_display.h>
 
-#include "samsung/panel/panel-samsung-drv.h"
+#include "panel/panel-samsung-drv.h"
 
 static const unsigned char pps_setting[] = {
 	0x11, 0x00, 0x00, 0x89, 0x30, 0x80, 0x09, 0x60,
@@ -614,12 +614,31 @@ static bool ak3a_is_mode_seamless(const struct exynos_panel *ctx,
 	return drm_mode_equal_no_clocks(&ctx->current_mode->mode, &pmode->mode);
 }
 
+static void ak3a_debugfs_init(struct drm_panel *panel, struct dentry *root)
+{
+	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
+	struct dentry *panel_root, *csroot;
+
+	if (!ctx)
+		return;
+
+	panel_root = debugfs_lookup("panel", root);
+	if (!panel_root)
+		return;
+
+	csroot = debugfs_lookup("cmdsets", panel_root);
+	if (!csroot) {
+		goto panel_out;
+	}
+
+	exynos_panel_debugfs_create_cmdset(ctx, csroot, &ak3a_init_cmd_set, "init");
+	dput(csroot);
+panel_out:
+	dput(panel_root);
+}
+
 static void ak3a_panel_init(struct exynos_panel *ctx)
 {
-	struct dentry *csroot = ctx->debugfs_cmdset_entry;
-
-	exynos_panel_debugfs_create_cmdset(ctx, csroot,
-					   &ak3a_init_cmd_set, "init");
 	ak3a_lhbm_gamma_read(ctx);
 	ak3a_lhbm_gamma_write(ctx);
 }
@@ -803,6 +822,7 @@ static const struct drm_panel_funcs ak3a_drm_funcs = {
 	.prepare = exynos_panel_prepare,
 	.enable = ak3a_enable,
 	.get_modes = exynos_panel_get_modes,
+	.debugfs_init = ak3a_debugfs_init,
 };
 
 static const struct exynos_panel_funcs ak3a_exynos_funcs = {

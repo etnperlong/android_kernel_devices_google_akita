@@ -17,18 +17,18 @@
 				status = "okay";
 				compatible = "google,battery";
 				google,fg-psy-name = "maxfg";
-				google,chg-battery-capacity = <4485>;
+				google,chg-battery-capacity = <4404>;
 
 				/* charge table */
 				google,chg-temp-limits = <0 100 200 420 460 480 550>;
-				google,chg-cv-limits = <4200000 4300000 4350000 4450000>;
+				google,chg-cv-limits = <4200000 4250000 4300000 4350000 4480000>;
 				google,chg-cc-limits = <
-					 30   10    0   0
-					 50   30   30  30
-					100   70   70  50
-					 80   50   50  50
-					 50   50    0   0
-					 30    0    0   0
+					 30   10   10   0    0
+					 50   30   30  30   30
+					100   70   70  50   50
+					 80   50   50  50   50
+					 50   50   50  50    0
+					 30   30    0   0    0
 				>;
 
 				google,ttf-temp-idx= <2>;
@@ -64,15 +64,19 @@
 				google,temp-record-thr = <300 350 400>;
 				google,soc-record-thr = <90 90 95>;
 
+				google,bhi-status-marginal = <79>;
+				google,bhi-status-need-rep = <79>;
+				google,bhi-cycle-grace = <200>;
+
 				#thermal-sensor-cells = <0>;
 				#cooling-cells = <2>;
 			};
 
 			google_bms {
 				nvmem = <&pack_bee>;
-				nvmem-names = "4-00500";
+				nvmem-names = "6-00500";
 				/* pack eeprom is available only with P20+ batteries */
-				google,bee-name = "4-00500";
+				google,bee-name = "6-00500";
 			};
 
 		};
@@ -194,10 +198,10 @@
 };
 
 &max77759_fg {
-	//maxim,filtercfg-temp = <100>;
-	//maxim,filtercfg-temp-hysteresis = <30>;
-	//maxim,filtercfg-default = /bits/ 16 <0xc613>;
-	//maxim,filtercfg-adjust = /bits/ 16 <0xc617>;
+	maxim,filtercfg-temp = <100>;
+	maxim,filtercfg-temp-hysteresis = <30>;
+	maxim,filtercfg-default = /bits/ 16 <0xc613>;
+	maxim,filtercfg-adjust = /bits/ 16 <0xc616>;
 
 	maxim,fg-data {
 		#include "zuma-akita-battery-data.dtsi"

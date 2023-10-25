@@ -8,6 +8,21 @@
 
 #include <dt-bindings/pinctrl/samsung.h>
 
+&hsi2c_9 {
+	/* RT6160A */
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	rt6160: rt6160@77 {
+		compatible = "richtek,rt6160";
+		reg = <0x77>;
+		status = "ok";
+		regulator-name = "rt6160-buckboost";
+		regulator-min-microvolt = <3200000>;
+		regulator-max-microvolt = <3200000>;
+	};
+};
+
 &hsi2c_14 {
 	/* SLG51002 */
 	status = "okay";
@@ -17,7 +32,6 @@
 		compatible = "dlg,slg51002";
 		reg = <0x75>;
 		status = "ok";
-		dlg,buck-gpios = <&s2mpg15_gpio 3 GPIO_ACTIVE_HIGH>;
 		dlg,bb-gpios = <&s2mpg15_gpio 1 GPIO_ACTIVE_HIGH>;
 		dlg,cs-gpios = <&s2mpg15_gpio 0 GPIO_ACTIVE_HIGH>;
 		dlg,reg-init-cells = <2>;

@@ -52,13 +52,9 @@
 };
 
 &m_ext4_rail {
-	schematic-name = "VSYS_PWR_VBATT";
+	schematic-name = "VSYS_PWR_CAM";
 	shunt-res-uohms = <5000>;
-	subsys-name = "BATT";
-};
-
-&m_ext5_rail {
-	shunt-res-uohms = <10000>;
+	subsys-name = "Camera";
 };
 
 &s_ext4_rail {
@@ -161,6 +157,12 @@
 /* replace L15M_SPARE to L22M_DISP */
 &ch9 {
 	rail-name = "LDO22M";
+};
+
+/* replace L9S_GNSS_CORE with SC */
+&ch20 {
+	rail-name = "BUCKC";
+	subsys-name = "UFS";
 };
 
 /* replace L29S_SPARE to L21S_VDD2L_MEM */

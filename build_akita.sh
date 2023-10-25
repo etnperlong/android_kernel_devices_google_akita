@@ -1,6 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 
+if [ "${BUILD_AOSP_KERNEL}" != "1" ]; then
+  BUILD_STAGING_KERNEL="${BUILD_STAGING_KERNEL:-1}"
+fi
+
 function exit_if_error {
   if [ $1 -ne 0 ]; then
     echo "ERROR: $2: retval=$1" >&2
@@ -8,40 +12,39 @@ function exit_if_error {
   fi
 }
 
-# Set KLEAF=1 to build with kleaf. This ignores all other command line options.
-if [ -n "${KLEAF}" ]; then
-  exec tools/bazel run --config=akita --config=fast //private/devices/google/akita:zuma_akita_dist
+if [ "${BUILD_AOSP_KERNEL}" = "1" -a "${BUILD_STAGING_KERNEL}" = "1" ]; then
+  echo "BUILD_AOSP_KERNEL=1 is incompatible with BUILD_STAGING_KERNEL."
+  exit_if_error 1 "Flags incompatible with BUILD_AOSP_KERNEL detected"
 fi
 
-cat <<- EOF
-==================== NOTICE ==============================
-build.sh is going to be deprecated soon. All android14
-kernels are moving to kleaf. Please migrate to using kleaf
-by using the following command:
-
-  KLEAF=1 $0
-
-For any issues, file a bug using go/kleaf-bug.
-==========================================================
-EOF
-
-export GKI_KERNEL_DIR=${GKI_KERNEL_DIR:-"aosp-staging"}
-export KLEAF_SUPPRESS_BUILD_SH_DEPRECATION_WARNING=1
-export LTO=${LTO:-thin}
-export BUILD_CONFIG=private/devices/google/akita/build.config.akita
-
-# TODO(b/239987494): Remove this when the core GKI fragment is removed.
-# Since we can't have two build config fragments, any alternative use
-# of GKI_BUILD_CONFIG_FRAGMENT must include CORE_GKI_FRAGMENT,
-# i.e. `source ${CORE_GKI_FRAGMENT}`.
-export CORE_GKI_FRAGMENT=private/devices/google/akita/build.config.akita.gki.fragment
-
-if [ -z "${GKI_PREBUILTS_DIR}" ]; then
-  GKI_BUILD_CONFIG_FRAGMENT=${GKI_BUILD_CONFIG_FRAGMENT:-${CORE_GKI_FRAGMENT}} \
-  GKI_BUILD_CONFIG="${GKI_KERNEL_DIR}/build.config.gki.aarch64" \
-    build/build.sh "$@"
-else
-  build/build.sh "$@"
+if [ "${#}" = "0" ]; then
+  parameters=
+  bazelrc_file="private/google-modules/soc/gs/device.bazelrc"
+  GKI_BUILD_ID=`sed -n 's/.*gki_prebuilts=\([0-9]\+\).*/\1/p' $bazelrc_file`
+  USE_GKI=`grep "^build --config=download_gki" $bazelrc_file`
+  NO_USE_GKI=`grep "^build --config=no_download_gki" $bazelrc_file`
+  USE_AOSP=`grep "^build --config=use_source_tree_aosp$" $bazelrc_file`
+  USE_AOSP_STAGING=`grep "^build --config=use_source_tree_aosp_staging$" $bazelrc_file`
+  if [ "${BUILD_AOSP_KERNEL}" = "1" ] || [ -n "${USE_AOSP}" ]; then
+    echo -e "\nBuilding with core-kernel generated from source tree aosp/\n"
+    parameters="--config=use_source_tree_aosp --config=no_download_gki"
+  elif [ "${BUILD_STAGING_KERNEL}" = "1" ] || [ -n "${USE_AOSP_STAGING}" ]; then
+    echo -e "\nBuilding with core-kernel generated from source tree aosp-staging/\n"
+    parameters="--config=use_source_tree_aosp_staging --config=no_download_gki"
+  elif [ -n "${GKI_BUILD_ID}" ] && [ -n "${USE_GKI}" ] && [ -z "${NO_USE_GKI}" ] && [ -z "${USE_AOSP}" ] && [ -z "${USE_AOSP_STAGING}" ]; then
+    echo -e "\nBuilding with GKI prebuilts from ab/$GKI_BUILD_ID - kernel_aarch64\n"
+  else
+    echo -e "\nPlease check private/google-modules/soc/gs/device.bazelrc"
+    echo -e "   1) IF \"build --config=use_source_tree_aosp\"           ----> core-kernel generated from source tree aosp/"
+    echo -e "   2) IF \"build --config=use_source_tree_aosp_staging\"   ----> core-kernel generated from source tree aosp-staging/"
+    echo -e "   3) IF \"build --config=download_gki\"                   ----> core-kernel based on GKI prebuilts\n"
+  fi
 fi
 
-exit_if_error $? "Failed to create mixed build"
+exec tools/bazel run \
+    ${parameters} \
+    --config=stamp \
+    --config=akita \
+    --config=fast \
+    --config=pixel_debug_common \
+    //private/devices/google/akita:zuma_akita_dist "$@"
