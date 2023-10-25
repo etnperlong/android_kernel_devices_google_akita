@@ -5,7 +5,7 @@
  * Copyright 2022 Google LLC
  */
 
-#include "../google-dts-base/zuma-board.dtsi"
+#include "google-dts-base/zuma-board.dtsi"
 
 #include "zuma-akita-camera-pmic.dtsi"
 #include "zuma-akita-usb.dtsi"
@@ -15,4 +15,5 @@
 #include "zuma-akita-wcharger.dtsi"
 #include "zuma-akita-gsa-gsc.dtsi"
 #include "zuma-akita-wlan.dtsi"
+#include "zuma-akita-typec.dtsi"
 #include "zuma-akita-cp-s5300-thermal-zone.dtsi"
