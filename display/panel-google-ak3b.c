@@ -117,7 +117,6 @@ static const struct exynos_dsi_cmd ak3b_off_cmds[] = {
 static DEFINE_EXYNOS_CMD_SET(ak3b_off);
 
 static const struct exynos_dsi_cmd ak3b_lp_cmds[] = {
-	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_DISPLAY_OFF),
 	EXYNOS_DSI_CMD_SEQ(0xF0, 0x5A, 0x5A), /* test_key_on_f0 */
 	EXYNOS_DSI_CMD_SEQ(0xB9, 0x30), /* TE_SELECT 60Hz */
 	EXYNOS_DSI_CMD_SEQ(0xF7, 0x0F), /* freq_update */
@@ -125,22 +124,15 @@ static const struct exynos_dsi_cmd ak3b_lp_cmds[] = {
 };
 static DEFINE_EXYNOS_CMD_SET(ak3b_lp);
 
-static const struct exynos_dsi_cmd ak3b_lp_off_cmds[] = {
-	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_DISPLAY_OFF),
-};
-
 static const struct exynos_dsi_cmd ak3b_lp_low_cmds[] = {
 	EXYNOS_DSI_CMD_SEQ_DELAY(17, 0x53, 0x25), /* AOD 10 nit */
-	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_DISPLAY_ON),
 };
 
 static const struct exynos_dsi_cmd ak3b_lp_high_cmds[] = {
 	EXYNOS_DSI_CMD_SEQ_DELAY(17, 0x53, 0x24), /* AOD 50 nit */
-	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_DISPLAY_ON)
 };
 
 static const struct exynos_binned_lp ak3b_binned_lp[] = {
-	BINNED_LP_MODE("off", 0, ak3b_lp_off_cmds),
 	/* rising time = delay = 12, falling time = delay + width = 12 + 35 */
 	BINNED_LP_MODE_TIMING("low", 813, ak3b_lp_low_cmds, 12, 12 + 35), /* 40 nits */
 	BINNED_LP_MODE_TIMING("high", 3175, ak3b_lp_high_cmds, 12, 12 + 35)
@@ -166,7 +158,8 @@ static const struct exynos_dsi_cmd ak3b_init_cmds[] = {
 	EXYNOS_DSI_CMD0_REV(freq_update, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
 	EXYNOS_DSI_CMD0_REV(test_key_off_f0, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
 
-	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_TEAR_ON, 0x00),
+	/* b/241726710 - remove the parameter to avoid MIPI DSIM timeout */
+	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_TEAR_ON),
 	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_COLUMN_ADDRESS, 0x00, 0x00, 0x04, 0x37),
 	EXYNOS_DSI_CMD_SEQ(MIPI_DCS_SET_PAGE_ADDRESS, 0x00, 0x00, 0x09, 0x5F),
 };
@@ -377,6 +370,14 @@ static void ak3b_lhbm_gamma_write(struct exynos_panel *ctx)
 	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
 }
 
+static void ak3b_send_aod_without_blink_settings(struct exynos_panel *ctx)
+{
+	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
+	EXYNOS_DCS_BUF_ADD(ctx, 0xB0, 0x00, 0x03, 0xBB);
+	EXYNOS_DCS_BUF_ADD(ctx, 0xBB, 0x01, 0x0C);
+	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
+}
+
 static void ak3b_get_te2_setting(struct exynos_panel_te2_timing *timing,
 				    u8 *setting)
 {
@@ -472,8 +473,13 @@ static void ak3b_change_frequency(struct exynos_panel *ctx,
 	const u8 ns60_setting[3] = {0x60, 0x18, 0x00};
 	const u8 hs120_setting[3] = {0x60, 0x00, 0x00};
 
-	if (!ctx || (vrefresh != 60 && vrefresh != 120))
+	if (unlikely(!ctx))
 		return;
+
+	if (vrefresh != 60 && vrefresh != 120) {
+		dev_warn(ctx->dev, "%s: invalid refresh rate %uhz\n", __func__, vrefresh);
+		return;
+	}
 
 	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
 	if (vrefresh == 120) {
@@ -659,28 +665,32 @@ static void ak3b_set_nolp_mode(struct exynos_panel *ctx,
 				  const struct exynos_panel_mode *pmode)
 {
 	const struct exynos_panel_mode *current_mode = ctx->current_mode;
-	unsigned int vrefresh = current_mode ? drm_mode_vrefresh(&current_mode->mode) : 30;
-	unsigned int te_usec = current_mode ? current_mode->exynos_mode.te_usec : 460;
+	unsigned int aod_vrefresh = current_mode ? drm_mode_vrefresh(&current_mode->mode) : 30;
+	unsigned int new_vrefresh = drm_mode_vrefresh(&pmode->mode);
+	unsigned int aod_te_usec = current_mode ? current_mode->exynos_mode.te_usec : 460;
 
 	if (!is_panel_active(ctx))
 		return;
 
-	EXYNOS_DCS_BUF_ADD_AND_FLUSH(ctx, MIPI_DCS_SET_DISPLAY_OFF);
+	/* HS60 settings */
+	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
+	EXYNOS_DCS_BUF_ADD(ctx, 0x60, 0x08, 0x00);
+	EXYNOS_DCS_BUF_ADD(ctx, 0xF7, 0x0F);
+	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
+
 	/* AOD off setting */
 	EXYNOS_DCS_BUF_ADD_SET(ctx, test_key_on_f0);
 	EXYNOS_DCS_BUF_ADD(ctx, 0x53, 0x20);
 	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, test_key_off_f0);
-	ak3b_change_frequency(ctx, vrefresh);
+	ak3b_change_frequency(ctx, new_vrefresh);
 
 	DPU_ATRACE_BEGIN("ak3b_wait_one_vblank");
-	exynos_panel_wait_for_vsync_done(ctx, te_usec,
-			EXYNOS_VREFRESH_TO_PERIOD_USEC(vrefresh));
+	exynos_panel_wait_for_vsync_done(ctx, aod_te_usec,
+			EXYNOS_VREFRESH_TO_PERIOD_USEC(aod_vrefresh));
 
 	/* Additional sleep time to account for TE variability */
 	usleep_range(1000, 1010);
 	DPU_ATRACE_END("ak3b_wait_one_vblank");
-
-	EXYNOS_DCS_BUF_ADD_AND_FLUSH(ctx, MIPI_DCS_SET_DISPLAY_ON);
 
 	dev_info(ctx->dev, "exit LP mode\n");
 }
@@ -704,6 +714,7 @@ static int ak3b_enable(struct drm_panel *panel)
 	exynos_panel_reset(ctx);
 
 	exynos_panel_send_cmd_set(ctx, &ak3b_init_cmd_set);
+	ak3b_send_aod_without_blink_settings(ctx);
 
 	ak3b_change_frequency(ctx, drm_mode_vrefresh(mode));
 
@@ -721,8 +732,8 @@ static int ak3b_enable(struct drm_panel *panel)
 
 	if (pmode->exynos_mode.is_lp_mode)
 		exynos_panel_set_lp_mode(ctx, pmode);
-	else
-		EXYNOS_DCS_WRITE_SEQ(ctx, MIPI_DCS_SET_DISPLAY_ON); /* display on */
+
+	EXYNOS_DCS_BUF_ADD_AND_FLUSH(ctx, MIPI_DCS_SET_DISPLAY_ON); /* display on */
 
 	spanel->lhbm_ctl.hist_roi_configured = false;
 	return 0;
@@ -973,6 +984,7 @@ static void ak3b_panel_init(struct exynos_panel *ctx)
 	exynos_panel_send_cmd_set(ctx, &ak3b_lhbm_location_cmd_set);
 	ak3b_lhbm_gamma_read(ctx);
 	ak3b_lhbm_gamma_write(ctx);
+	ak3b_send_aod_without_blink_settings(ctx);
 }
 
 static void ak3b_get_panel_rev(struct exynos_panel *ctx, u32 id)
