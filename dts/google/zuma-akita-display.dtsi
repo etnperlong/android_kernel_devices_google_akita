@@ -73,11 +73,3 @@
 	status = "okay";
 	connector = <0x10>;
 };
-
-&m_ldo14_reg {
-	/delete-property/ regulator-always-on;
-};
-
-&m_ldo22_reg {
-	/delete-property/ regulator-always-on;
-};
