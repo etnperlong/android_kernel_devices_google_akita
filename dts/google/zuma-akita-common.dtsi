@@ -18,4 +18,5 @@
 #include "zuma-akita-pmic.dtsi"
 #include "zuma-akita-pcie.dtsi"
 #include "zuma-akita-bcl.dtsi"
+#include "zuma-akita-cp-features.dtsi"
 
