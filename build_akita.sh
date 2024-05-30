@@ -18,5 +18,4 @@ exec tools/bazel run \
     ${parameters} \
     --config=stamp \
     --config=akita \
-    --config=fast \
     //private/devices/google/akita:zuma_akita_dist "$@"
