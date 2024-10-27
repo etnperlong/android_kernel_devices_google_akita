@@ -1085,25 +1085,25 @@ static int ak3b_panel_probe(struct mipi_dsi_device *dsi)
 	return exynos_panel_common_init(dsi, &spanel->base);
 }
 
-static void ak3b_set_ssc_en(struct exynos_panel *exynos_panel,
-				 bool enabled)
+static void ak3b_set_ssc_mode(struct exynos_panel *exynos_panel,
+				 bool ssc_mode)
 {
-	const bool ssc_mode_update = exynos_panel->ssc_en != enabled;
+	const bool ssc_mode_update = exynos_panel->ssc_mode != ssc_mode;
 
 	if (!ssc_mode_update)
 		return;
 
-	exynos_panel->ssc_en = enabled;
+	exynos_panel->ssc_mode = ssc_mode;
 	EXYNOS_DCS_BUF_ADD(exynos_panel, 0xF0, 0x5A, 0x5A); /* test_key_on */
 	EXYNOS_DCS_BUF_ADD(exynos_panel, 0xFC, 0x5A, 0x5A); /* test_key_on */
 	EXYNOS_DCS_BUF_ADD(exynos_panel, 0xB0, 0x00, 0x6E, 0xC5); /* global para */
-	if (enabled)
+	if (ssc_mode)
 		EXYNOS_DCS_BUF_ADD(exynos_panel, 0xC5, 0x07, 0x7F);
 	else
 		EXYNOS_DCS_BUF_ADD(exynos_panel, 0xC5, 0x04, 0x00);
 	EXYNOS_DCS_BUF_ADD(exynos_panel, 0xFC, 0xA5, 0xA5); /* test_key_off */
 	EXYNOS_DCS_BUF_ADD_AND_FLUSH(exynos_panel, 0xF0, 0xA5, 0xA5); /* test_key_off */
-	dev_info(exynos_panel->dev, "ssc_mode=%d \n", exynos_panel->ssc_en);
+	dev_info(exynos_panel->dev, "ssc_mode=%d \n", exynos_panel->ssc_mode);
 }
 
 
@@ -1241,7 +1241,7 @@ static const struct exynos_panel_funcs ak3b_exynos_funcs = {
 	.set_op_hz = ak3b_set_op_hz,
 	.read_id = exynos_panel_read_ddic_id,
 	.atomic_check = ak3b_atomic_check,
-	.set_ssc_en = ak3b_set_ssc_en,
+	.set_ssc_mode = ak3b_set_ssc_mode,
 };
 
 const struct brightness_capability ak3b_brightness_capability = {
